@@ -8,32 +8,36 @@
     <link rel="stylesheet" type="text/css" href="style.css" />
   </head>
 <body>
-  <div id="ctrl">
+  <div id="ctrlBox">
     <h1>Ant Realm</h1>
-    <div id="cmd">
-      <h2>Commands</h2>
-      <div id="btns">
-        <button id="btHome">Back Home</button>
-        <button id="btFood">Get Food</button>
-        <button id="btAttack">Attack!</button><br>
-        <button id="btN">Go North</button>
-        <button id="btS">Go South</button>
-        <button id="btW">Go West</button>
-        <button id="btE">Go East</button>
+    <div id="ctrl">
+      <div id="cmd">
+        <h2>Commands</h2>
+        <div id="btns">
+          <button id="btHome">Back Home</button>
+          <button id="btFood">Get Food</button>
+          <button id="btAttack">Attack!</button><br>
+          <button id="btN">Go North</button>
+          <button id="btS">Go South</button>
+          <button id="btW">Go West</button>
+          <button id="btE">Go East</button>
+        </div>
+        <hr>
+        <h2>Proportions</h2>
+        <ul>
+        <li class="prop" id="propWork">Worker:  <b id="propWorkV">90%</b></li>
+        <li class="prop" id="propWarr">Warrior: <b id="propWarrV">10%</b></li>
+        </ul>
+        <small>(click to increase)</small>
+        <hr>
+        <h2>Your ants</h2>
+        <li>workers: <b id="qtdWorkN">0</b> in, <b id="qtdWorkG">0</b> out.</li>
+        <li>warriors: <b id="qtdWarrN">0</b> in, <b id="qtdWarrG">0</b> out.</li>
+        <hr>
+        Food: <b id="qtdFood">0</b> <br>
+        Lifetime: <b id="lifetimeEl">0</b>
+        <hr>
       </div>
-      <h2>Proportions</h2>
-      <ul>
-      <li class="prop" id="propWork">Worker:  <b id="propWorkV">90%</b></li>
-      <li class="prop" id="propWarr">Warrior: <b id="propWarrV">10%</b></li>
-      </ul>
-      <small>(click to increase)</small>
-      <hr>
-      Your ants:
-      <li>workers: <b id="qtdWorkN">0</b> in, <b id="qtdWorkG">0</b> out.</li>
-      <li>warriors: <b id="qtdWarrN">0</b> in, <b id="qtdWarrG">0</b> out.</li>
-      <hr>
-      Food: <b id="qtdFood">0</b> <br>
-      Lifetime: <b id="lifetime">0</b>
     </div>
     <div id="map">&nbsp;Map<div id="view"></div></div>
   </div>

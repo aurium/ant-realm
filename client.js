@@ -4,19 +4,20 @@ var ctx = c.getContext('2d'),
     b = d.body,
     w = 0,
     h = 0,
-    viewX = 2000,
-    viewY = 2000,
+    viewX = 2500,
+    viewY = 1700,
     incViewX = 0,
     incViewY = 0,
     incViewAcel = 1,
-    gardenW = 5000,
-    gardenH = 5000,
-    mapProportion = 100/3,
+    gardenW = 6000,
+    gardenH = 4000,
+    mapProportion = 40,
     playerName = docCookies.getItem('ants-playerName') || '',
     sessionID = docCookies.getItem('ants-sessionID'),
     anthills = {},
     antsTarget = {},
     ants = {},
+    lifetime = 0,
     pheromones = {}, // DEBUG ONLY
     candies = {},
     proportionWork = 90,
@@ -439,7 +440,7 @@ socket.on('disconnect', onDisconnect);
 socket.on('pheromones', function(data){ pheromones = data }); // DEBUG ONLY
 socket.on('candies', function(data){ candies = data });
 socket.on('food', function(data){ qtdFood.innerHTML = data });
-socket.on('lifetime', function(data){ lifetime.innerHTML = timeToStr(data) });
+socket.on('lifetime', function(data){ lifetimeEl.innerHTML = timeToStr(lifetime=data) });
 socket.on('record', function(data){
   record.innerHTML = 'Record: '+data.user +' - lifetime: '+timeToStr(data.lifetime);
 });
@@ -465,6 +466,13 @@ socket.on('anthillDone', function(data){
     ' This commands are pheromones and will last 10 seconds. <hr>' +
     'You can close this page and back to command your ants again,' +
     ' <b>if</b> the anthill still alive.'
+  );
+});
+socket.on('gameOver', function(data){
+  openDialog(
+    'Game Over',
+    '<b>'+ data +'</b><p/>' +
+    'Your anthill survive for '+ timeToStr(lifetime)
   );
 });
 

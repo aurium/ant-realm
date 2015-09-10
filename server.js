@@ -1,7 +1,7 @@
 'use strict';
 
-var gardenW = 5000,
-    gardenH = 5000,
+var gardenW = 6000,
+    gardenH = 4000,
     users = {},
     ants = {},
     ACTION_FINDFOOD = 1,
@@ -60,6 +60,7 @@ function createAnt(userName, type) {
     y: -99,
     a: rnd(6.28),
     life: (type==0)? 20 : 40,
+    food: 500,
     born: tics,
     owner: userName,
     act: ACTION_FINDFOOD,
@@ -77,14 +78,14 @@ function dist(x1,y1, x2,y2) {
 function nearToAnAnthill(x,y) {
   for (var name in users) {
     var anthill = users[name].anthill;
-    if ( dist(x,y, anthill.x,anthill.y) < 150 ) return true;
+    if ( dist(x,y, anthill.x,anthill.y) < 250 ) return true;
   }
   return false;
 }
 
 function dropCandies() {
-  var x = gardenW*.3 + rnd(gardenW*.4);
-  var y = gardenH*.3 + rnd(gardenH*.4);
+  var x = gardenW*.25 + rnd(gardenW*.5);
+  var y = gardenH*.25 + rnd(gardenH*.5);
   while (nearToAnAnthill(x,y)) {
     x = gardenW*.1 + rnd(gardenW*.8);
     y = gardenH*.1 + rnd(gardenH*.8);
@@ -127,7 +128,7 @@ function recoverFail(socket) {
   socket.emit('requestName');
 }
 
-function userRequestPlace(data) {
+function userRequestPlace(data, id) {
   log.info('userRequestPlace', data);
   io.emit('record', record); // update to everybody.
   if ( data.x < 50 ) data.x = 50;
@@ -147,7 +148,9 @@ function userRequestPlace(data) {
     var user = users[name] = {
       name: name,
       born: now(),
-      anthill: {x:round(data.x), y:round(data.y), food:100},
+      food: 500,
+      queen: {food: 500},
+      anthill: {x:round(data.x), y:round(data.y)},
       pheromone: { pathHome: {}, pathFood: {} },
       proportion: { work:90, warr:10 }
     };
@@ -163,7 +166,7 @@ function userRequestPlace(data) {
     createAnt(name, 0);
     createAnt(name, 0);
     createAnt(name, 0);
-    user.sessionID = name + rnd();
+    user.sessionID = id || name + rnd();
     log.debug('User "'+name+'" created');
     if ( this && this.emit ) {
       user.socket = this;
@@ -176,10 +179,10 @@ function userRequestPlace(data) {
   }
 }
 
-userRequestPlace({name:'Saúvas', x:2100, y:2100});
-userRequestPlace({name:'Tanajuras', x:2900, y:2100});
-userRequestPlace({name:'Polyergus lucidus', x:2100, y:2500});
-userRequestPlace({name:'Myrmecocystus', x:2900, y:2500});
+userRequestPlace({name:'Saúvas',            x:gardenW*.25, y:gardenH*.25}, 1);
+userRequestPlace({name:'Tanajuras',         x:gardenW*.75, y:gardenH*.25}, 1);
+userRequestPlace({name:'Polyergus lucidus', x:gardenW*.25, y:gardenH*.75}, 1);
+userRequestPlace({name:'Myrmecocystus',     x:gardenW*.75, y:gardenH*.75}, 1);
 for (i=0; i<10; i++) { dropCandies() };
 
 function countAnts() {
@@ -187,8 +190,6 @@ function countAnts() {
     var user = users[name];
     user.qtd = 0, user.qtdN = 0, user.qtdG = 0;
     user.qWork = 0, user.qWork = 0;
-    //user.qWorkN = 0, user.qWorkG = 0;
-    //user.qWarrN = 0, user.qWarrG = 0;
   }
   for ( var id in ants ) {
     var ant = ants[id];
@@ -198,15 +199,8 @@ function countAnts() {
     if ( ant.inside ) { // Nested ants
       user.qtdN++;
       user.newerN = ant;
-//      if ( ant.type == 0 ) {
-//        user.newerWorkerN = ant;
-//        user.qWorkN++;
-//      } else {
-//        user.qWarrN++
-//      }
     } else { // Ants on the grass
       user.qtdG++;
-//      ( ant.type == 0 )? user.qWorkG++ : user.qWarrG++;
     }
   }
 }
@@ -218,7 +212,7 @@ function letPheromone(owner, pathType, ant, force) {
     angle = 0;
   }
   users[owner].pheromone[pathType][rnd()] = {
-    x: ant.x, y: ant.y, vx: cos(angle), vy: sin(angle), force: (force || 300)
+    x: ant.x, y: ant.y, vx: cos(angle), vy: sin(angle), force: (force || 400)
   };
 }
 
@@ -256,11 +250,18 @@ function angleTo(p1, p2) {
 
 function attack(ant, force) {
   ant.life -= force;
-  if ( ant.life <= 0 ) kill(ant, ant.id+' was killed by an enemy.');
+  if ( ant.life <= 0 ) kill(ant, 'was killed by an enemy.');
 }
 
 function kill(ant, msg) {
+  msg = ' Your ant '+ant.id+', '+msg
   if (users[ant.owner].socket) users[ant.owner].socket.emit('news', msg);
+  var candy = candies[ant.candy];
+  if (candy) {
+    candy.ant = null;
+    candy.x = ant.x;
+    candy.y = ant.y;
+  }
   delete ants[ant.id];
 }
 
@@ -306,7 +307,7 @@ function moveAnt(ant) {
         }
       } else folowPath(ant, 'pathFood');
     } else { // Warriors
-      if ( nearToGroupElement(ant, candies, 20).ent ) ant.act = ACTION_BACKHOME;
+      if ( nearToGroupElement(ant, candies, 50).ent ) ant.act = ACTION_BACKHOME;
       var enemy = nearToGroupElement(ant, ants, 100,
                   function(ent){ return ent.owner!=ant.owner && !ent.inside });
       if ( enemy.ent ) {
@@ -325,12 +326,12 @@ function moveAnt(ant) {
     if ( ant.type == 0 ) { // Workers
       if ( hillDist < 200 ) {
         ant.a = angleTo(ant, anthill);
-        if ( hillDist < 4 ) {
+        if ( hillDist < 5 ) {
           ant.inside = true;
           if(ant.candy) {
             delete candies[ant.candy];
             ant.candy = null;
-            users[ant.owner].anthill.food += 10;
+            users[ant.owner].food += 50;
             ant.act = ACTION_FINDFOOD;
           }
         }
@@ -341,7 +342,7 @@ function moveAnt(ant) {
       if ( enemy.ent ) ant.act = ACTION_FIGHT;
       if ( hillDist < 200 ) {
         ant.a = angleTo(ant, anthill);
-        if ( hillDist < 4 ) ant.inside = true;
+        if ( hillDist < 5 ) ant.inside = true;
       } else folowPath(ant, 'pathHome');
     }
     pheromoneType = 'pathFood';
@@ -359,6 +360,12 @@ function moveAnt(ant) {
     }
   }
   if(tics%3==0) letPheromone(ant.owner, pheromoneType, ant);
+  // Cant exit the gardem
+  if (ant.x < 0) ant.a = 0
+  if (ant.x > gardenW) ant.a = Math.PI
+  if (ant.y < 0) ant.a = Math.PI*1.5
+  if (ant.y > gardenH) ant.a = Math.PI*0.5
+  // Move!
   ant.x += cos(ant.a)*8;
   ant.y += sin(ant.a)*8;
 }
@@ -368,12 +375,26 @@ function walkWithoutPath(ant) {
 }
 
 (function tic() {
+  var user;
   tics++;
   if (tics % 100 == 0) dropCandies();
   countAnts();
   // User related updates
   for (var name in users) {
-    var user = users[name];
+    user = users[name];
+    var lifetime = now() - user.born;
+    // Feed the queen
+    if ( user.queen.food<500 && user.food>0 ) { // Must eat
+      user.food--; user.queen.food++;
+    }
+    var metabolism = 60-round(lifetime/(1000*60));
+    if (metabolism<1) metabolism = 1;
+    log.debug('metabolism', user.name, metabolism, lifetime);
+    if (tics%metabolism==0) { // consume calories
+      user.queen.food--;
+      if (user.socket && user.queen.life < 100) user.socket.emit('news', 'Your queen is hungry!');
+      if ( user.queen.life < 1 ) gameOver(user, 'Queen dye hungry.')
+    }
     // Ant born
     if (tics%101==0) createAnt(name);
     // Pop out ants
@@ -385,8 +406,7 @@ function walkWithoutPath(ant) {
       ant.a = rnd(6.28);
     }
     if ( user.socket ) {
-      user.socket.emit('food', user.anthill.food);
-      var lifetime = now() - user.born;
+      user.socket.emit('food', user.food);
       user.socket.emit('lifetime', lifetime);
       if ( lifetime > record.lifetime || name != record.user ) {
         record = {user:name, lifetime:lifetime};
@@ -403,7 +423,19 @@ function walkWithoutPath(ant) {
       }
     }
   }
-  for ( var id in ants ) if (!ants[id].inside) moveAnt(ants[id]);
+  for ( var id in ants ) {
+    var ant = ants[id];
+    user = users[ant.owner];
+    if (!ant.inside) moveAnt(ant);
+    // Feed
+    if ( ant.inside && ant.food<500 && user.food>0 ) { // Must eat
+      user.food--; ant.food++;
+    }
+    if (tics%10==0) { // consume calories
+      ant.food--;
+      if (ant.food<0) kill(ant, 'dies hungry.')
+    }
+  }
   io.emit('ants', ants);
   io.emit('candies', candies);
   var pheromones={}; for (name in users) pheromones[name] = users[name].pheromone;
@@ -417,3 +449,11 @@ function walkWithoutPath(ant) {
   setTimeout(tic, ticDelay);
 })();
 
+function gameOver(user, msg) {
+  for ( var id in ants ) if (ants[id].owner == user.name) kill(ants[id], 'has no queen.');
+  delete users[user.name];
+  if ( user.socket ) user.socket.emit('gameOver', msg);
+  io.emit('news', 'The 'user.name+"'s anthill dies.");
+  if ( user.sessionID == 1 )
+    userRequestPlace({name:user.name, x:200+rnd(gardenW-400), y:200+rnd(gardenH-400)}, 1);
+}
