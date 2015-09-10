@@ -283,7 +283,7 @@ function folowPath(ant, pathType) {
     var asin = Math.asin(svy/num);
     var lastA = ant.a;
     ant.a = (asin > 0)? acos : -acos;
-    if(!ant.a) {
+    if(isNaN(ant.a)) {
       log.debug('Calc angle fail', ant.id, 'last Angle:',lastA, 'vecs:',svx,svy,num, 'result:', ant.a);
       ant.a = lastA || 0;
     }
@@ -310,10 +310,8 @@ function moveAnt(ant) {
       if ( nearToGroupElement(ant, candies, 50).ent ) ant.act = ACTION_BACKHOME;
       var enemy = nearToGroupElement(ant, ants, 100,
                   function(ent){ return ent.owner!=ant.owner && !ent.inside });
-      if ( enemy.ent ) {
-        ant.a = angleTo(ant, enemy.ent);
-        if ( enemy.dist < 4 ) attack(enemy.ent, 2);
-      } else if (!folowPath(ant, 'pathFood')) {
+      if ( enemy.ent ) ant.act = ACTION_FIGHT;
+      if (!folowPath(ant, 'pathFood')) {
         var friend = nearToGroupElement(ant, ants, 100,
                      function(ent){ return ent.owner==ant.owner && !ent.inside });
         if ( friend.ent ) ant.a = angleTo(ant, friend.ent);
@@ -389,7 +387,7 @@ function walkWithoutPath(ant) {
     }
     var metabolism = 60-round(lifetime/(1000*60));
     if (metabolism<1) metabolism = 1;
-    log.debug('metabolism', user.name, metabolism, lifetime);
+    if (tics%1200==0) log.debug('metabolism', user.name, metabolism, lifetime);
     if (tics%metabolism==0) { // consume calories
       user.queen.food--;
       if (user.socket && user.queen.life < 100) user.socket.emit('news', 'Your queen is hungry!');
@@ -453,7 +451,7 @@ function gameOver(user, msg) {
   for ( var id in ants ) if (ants[id].owner == user.name) kill(ants[id], 'has no queen.');
   delete users[user.name];
   if ( user.socket ) user.socket.emit('gameOver', msg);
-  io.emit('news', 'The 'user.name+"'s anthill dies.");
+  io.emit('news', 'The '+user.name+"'s anthill dies.");
   if ( user.sessionID == 1 )
     userRequestPlace({name:user.name, x:200+rnd(gardenW-400), y:200+rnd(gardenH-400)}, 1);
 }
