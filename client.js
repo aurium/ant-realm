@@ -509,10 +509,12 @@ socket.on('anthillDone', function(data){
   openDialog(
     'Wellcome '+playerName,
     'At the left you can see the commands that you, the Ant Queen, can send.' +
+    ' (It is scrollable!)' +
     ' This commands are pheromones and will last some seconds. <hr>' +
     'You have two kinds of ants: workers and warriors, you will recognize by size.' +
     ' Warriors will not get food for you, but it fight better.' +
     ' Your ants are allways black. <hr>' +
+    'You can move the map touching on its edges, or using your keyboard arrows. <hr>' +
     'You can close this page and back to command your ants again,' +
     ' <b>if</b> the anthill still alive.'
   );
@@ -538,7 +540,13 @@ btS.onclick = function() { btCmdPressed(this,3); socket.emit('cmd', 'goS') }
 btW.onclick = function() { btCmdPressed(this,3); socket.emit('cmd', 'goW') }
 btE.onclick = function() { btCmdPressed(this,3); socket.emit('cmd', 'goE') }
 
-console.log('connected.');
+if (/mobile|android|iPhone/i.test(navigator.userAgent)) {
+  d.onclick = function() {
+    if (d.fullScreenEnabled) b.requestFullscreen();
+    if (d.mozFullScreenEnabled) b.mozRequestFullScreen();
+    if (d.webkitFullscreenEnabled) de.webkitRequestFullScreen();
+  }
+}
 
 setTimeout(tic, 10);
 

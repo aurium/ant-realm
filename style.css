@@ -166,10 +166,10 @@ h2 {
 
 #dialog {
   position: absolute;
-  top: calc(50% - 110px);
+  top: calc(50% - 150px);
   left: calc(50% - 160px);
   min-width: 200px;
-  max-width: 400px;
+  max-width: 450px;
   padding: 10px;
   border: 5px solid #DDD;
   background: #BBB;
@@ -208,6 +208,11 @@ h2 {
   text-align: left;
   padding: 20px 10px;
   border-bottom: 1px solid #CCC;
+}
+
+#dialogContent hr {
+  border: none;
+  border-top: 2px dotted #AAA;
 }
 
 #dialog input {

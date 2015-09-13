@@ -434,7 +434,8 @@ function walkWithoutPath(ant) {
     if (tics%1200==0) log.debug('metabolism', user.name, metabolism, lifetime);
     if (tics%metabolism==0) { // consume calories
       user.queen.food--;
-      if (user.socket && user.queen.food < 100) user.socket.emit('news', 'Your queen is hungry!');
+      if (user.socket && user.queen.food < 100 && tics%5==0)
+        user.socket.emit('news', 'Your queen is hungry!');
       if ( user.queen.food < 1 ) gameOver(user, 'Queen died hungry.')
     }
     if (user.socket) user.socket.emit('queenFood', user.queen.food);
@@ -530,4 +531,5 @@ function gameOver(user, msg) {
   io.emit('news', 'The '+user.name+"'s anthill dies.");
   if ( user.sessionID == 1 )
     userRequestPlace({name:user.name, x:200+rnd(gardenW-400), y:200+rnd(gardenH-400)}, 1);
+  emitAnthills();
 }
