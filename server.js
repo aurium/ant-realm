@@ -21,16 +21,19 @@ var gardenW = 6000,
     lastTicTmp = 0,
     lastTic = now(),
     ticDelay = 500,
-    record = db('record') || {user:'nobody', lifetime:0};
+    record = db('record') || {user:'nobody', lifetime:0},
     io = require('sandbox-io');
 
+log.debug('record', record)
+
 io.on('connection', function(socket) {
-  log.debug('New connection', socket.id);
+  log.info('New connection', socket.id);
   socket.emit('news', 'Connected!');
   emitAnthills(socket);
   socket.on('requestPlace', userRequestPlace);
   socket.on('recoverSession', recoverSession);
   socket.on('proportion', updateProportion);
+  socket.on('cmd', execCommand);
 });
 
 function updateProportion(data) {
@@ -38,7 +41,7 @@ function updateProportion(data) {
   if (this.antUser) this.antUser.proportion = data;
 }
 
-function emitAnthills(socket) {
+function getAnthills() {
   var anthills = {};
   for (var name in users) anthills[name] = {
     owner: name,
@@ -46,7 +49,20 @@ function emitAnthills(socket) {
     y: users[name].anthill.y,
     color: users[name].color
   };
-  socket.emit('anthills', anthills);
+  return anthills;
+}
+
+function emitAnthills(socket) {
+  socket.emit('anthills', getAnthills());
+}
+
+function execCommand(cmd) {
+  var usr = this.antUser;
+  log.debug('Command!', usr.name, cmd);
+  usr.currentCMD = cmd;
+  if (usr.cmdTimeout) clearTimeout(usr.cmdTimeout);
+  var timeout = ( 'goHomegetFoodattack'.indexOf(cmd)>-1 )? 8 : 3;
+  usr.cmdTimeout = setTimeout(function(){ usr.currentCMD=null }, timeout*1000);
 }
 
 var antNames = 'And Ami Cly Ceu Den Dim Fye Fin Gio Guu Mia Zee Zed'.split(' ');
@@ -56,8 +72,8 @@ function createAnt(userName, type) {
   if (!type) type = (owner.proportion.work < (owner.qWork / owner.qtd)*100)? 1 : 0;
   ants[id] = {
     id: id,
-    x: -99,
-    y: -99,
+    x: owner.anthill.x,
+    y: owner.anthill.y,
     a: rnd(6.28),
     life: (type==0)? 20 : 40,
     food: 500,
@@ -86,9 +102,9 @@ function nearToAnAnthill(x,y) {
 function dropCandies() {
   var x = gardenW*.25 + rnd(gardenW*.5);
   var y = gardenH*.25 + rnd(gardenH*.5);
-  while (nearToAnAnthill(x,y)) {
-    x = gardenW*.1 + rnd(gardenW*.8);
-    y = gardenH*.1 + rnd(gardenH*.8);
+  while ( nearToAnAnthill(x,y) || nearToGroupElement({x:x,y:y}, candies, 100).ent ) {
+    x = gardenW*.05 + rnd(gardenW*.9);
+    y = gardenH*.05 + rnd(gardenH*.9);
   }
   for (var i=0; i<30; i++) setTimeout(function(){
     if (rnd(2)<1) {
@@ -114,8 +130,9 @@ function recoverSession(sessionID) {
   var name = sessionID.replace(/0\.[0-9]+$/, '');
   var user = users[name];
   if (user) {
-    log.debug('recoverSession: user '+name+' existis')
+    log.debug('recoverSession: user '+name+' existis');
     user.socket = this;
+    this.antUser = user;
     if ( user.sessionID == sessionID ) {
       this.emit('news', 'Your anthill is alive and waiting for your orders.');
       this.emit('anthillDone', sessionID);
@@ -148,6 +165,8 @@ function userRequestPlace(data, id) {
     var user = users[name] = {
       name: name,
       born: now(),
+      currentCMD: null,
+      cmdTimeout: null,
       food: 500,
       queen: {food: 500},
       anthill: {x:round(data.x), y:round(data.y)},
@@ -254,7 +273,7 @@ function attack(ant, force) {
 }
 
 function kill(ant, msg) {
-  msg = ' Your ant '+ant.id+', '+msg
+  msg = ' Your ant "'+ant.id+'", '+msg
   if (users[ant.owner].socket) users[ant.owner].socket.emit('news', msg);
   var candy = candies[ant.candy];
   if (candy) {
@@ -266,6 +285,27 @@ function kill(ant, msg) {
 }
 
 function folowPath(ant, pathType) {
+  if ( pathType == 'pathFood' ) {
+    var candy = nearToGroupElement(ant, candies, 200);
+    if ( candy.ent ) {
+      ant.a = angleTo(ant, candy.ent);
+      return true;
+    }
+  }
+  if ( pathType == 'pathHome' ) {
+    var anthill = users[ant.owner].anthill;
+    var hillDist = dist(ant.x, ant.y, anthill.x, anthill.y);
+    if ( hillDist < 200 ) {
+      ant.a = angleTo(ant, anthill);
+      if ( hillDist < 5 ) {
+        ant.inside = true;
+        ant.act = ACTION_FINDFOOD;
+        ant.x = anthill.x;
+        ant.y = anthill.y;
+      }
+      return true;
+    }
+  }
   walkWithoutPath(ant);
   // sv*: pheromones vector sum.
   var svx=0, svy=0, num=0;
@@ -279,10 +319,11 @@ function folowPath(ant, pathType) {
     }
   }
   if (num>0) {
-    var acos = Math.acos(svx/num);
-    var asin = Math.asin(svy/num);
+    //var acos = Math.acos(svx/num);
+    //var asin = Math.asin(svy/num);
     var lastA = ant.a;
-    ant.a = (asin > 0)? acos : -acos;
+    //ant.a = (asin > 0)? acos : -acos;
+    ant.a = Math.atan2(svy, svx);
     if(isNaN(ant.a)) {
       log.debug('Calc angle fail', ant.id, 'last Angle:',lastA, 'vecs:',svx,svy,num, 'result:', ant.a);
       ant.a = lastA || 0;
@@ -292,20 +333,17 @@ function folowPath(ant, pathType) {
   else return false;
 }
 
-function moveAnt(ant) {
-  var pheromoneType = 'pathHome';
+function setAntDirection(ant) {
   if ( ant.act == ACTION_FINDFOOD ) {
     if ( ant.type == 0 ) { // Workers
-      var candy = nearToGroupElement(ant, candies, 200);
+      folowPath(ant, 'pathFood');
+      var candy = nearToGroupElement(ant, candies, 4);
       if ( candy.ent ) {
-        ant.a = angleTo(ant, candy.ent);
-        if ( candy.dist < 4 ) {
           candy.ent.ant = ant.id;
           candy.ent.x = -999;
           ant.candy = candy.ent.id;
           ant.act = ACTION_BACKHOME;
-        }
-      } else folowPath(ant, 'pathFood');
+      }
     } else { // Warriors
       if ( nearToGroupElement(ant, candies, 50).ent ) ant.act = ACTION_BACKHOME;
       var enemy = nearToGroupElement(ant, ants, 100,
@@ -313,59 +351,65 @@ function moveAnt(ant) {
       if ( enemy.ent ) ant.act = ACTION_FIGHT;
       if (!folowPath(ant, 'pathFood')) {
         var friend = nearToGroupElement(ant, ants, 100,
-                     function(ent){ return ent.owner==ant.owner && !ent.inside });
+                     function(ent){ return ent!=ant && ent.owner==ant.owner && !ent.inside });
         if ( friend.ent ) ant.a = angleTo(ant, friend.ent);
       }
     }
   }
   if ( ant.act == ACTION_BACKHOME ) {
-    var anthill = users[ant.owner].anthill;
-    var hillDist = dist(ant.x, ant.y, anthill.x, anthill.y);
+    folowPath(ant, 'pathHome');
     if ( ant.type == 0 ) { // Workers
-      if ( hillDist < 200 ) {
-        ant.a = angleTo(ant, anthill);
-        if ( hillDist < 5 ) {
-          ant.inside = true;
-          if(ant.candy) {
-            delete candies[ant.candy];
-            ant.candy = null;
-            users[ant.owner].food += 50;
-            ant.act = ACTION_FINDFOOD;
-          }
-        }
-      } else folowPath(ant, 'pathHome');
+      if(ant.inside && ant.candy) {
+        delete candies[ant.candy];
+        ant.candy = null;
+        users[ant.owner].food += 50;
+        ant.act = ACTION_FINDFOOD;
+      }
     } else { // Warriors
       var enemy = nearToGroupElement(ant, ants, 100,
                   function(ent){ return ent.owner!=ant.owner && !ent.inside });
       if ( enemy.ent ) ant.act = ACTION_FIGHT;
-      if ( hillDist < 200 ) {
-        ant.a = angleTo(ant, anthill);
-        if ( hillDist < 5 ) ant.inside = true;
-      } else folowPath(ant, 'pathHome');
     }
-    pheromoneType = 'pathFood';
   }
   if ( ant.act == ACTION_FIGHT ) {
     var enemy = nearToGroupElement(ant, ants, 150,
                 function(ent){ return ent.owner!=ant.owner && !ent.inside });
     if ( enemy.ent ) {
-      ant.fightAngry = 40; // 20 seconds to forget and back home.
+      ant.fightAngry = 20; // 10 seconds to forget and back home.
       ant.a = angleTo(ant, enemy.ent);
-      if ( enemy.dist < 8 ) attack(enemy.ent, 2);
+      if ( enemy.dist < 8 ) attack(enemy.ent, ant.type+1);
     } else {
       walkWithoutPath(ant);
-      if ( --ant.fightAngry < 1 ) ant.act == ACTION_BACKHOME;
+      if ( --ant.fightAngry < 1 ) ant.act = ACTION_BACKHOME;
     }
   }
-  if(tics%3==0) letPheromone(ant.owner, pheromoneType, ant);
+
+  // Prevent ant collision
+  var otherAnt = nearToGroupElement(ant, ants, 30,
+                   function(ent){ return ent!=ant && !ent.inside }).ent;
+  // There is a near ant AND ant isnt warrior OR other is a brother
+  if ( otherAnt && (ant.type!=1 || otherAnt.owner==ant.owner) ) {
+    var angleToOther = angleTo(ant, otherAnt);
+    if ( angleToOther-.3<ant.a && angleToOther+.3>ant.a ) { // collision route!
+      ( angleToOther < ant.a )? ant.a+=.5 : ant.a-=.5;
+    }
+  }
+
+  // prevent ant to step over enemy anthill
+  var anthill = nearToGroupElement(ant, getAnthills(), 120,
+                   function(ah){ return ah.owner!=ant.owner }).ent;
+  if (anthill) {
+    var angleToAnthill = angleTo(ant, anthill);
+    if ( angleToAnthill-.5<ant.a && angleToAnthill+.5>ant.a ) { // collision route!
+      ( angleToAnthill < ant.a )? ant.a+=.5 : ant.a-=.5;
+    }
+  }
+
   // Cant exit the gardem
-  if (ant.x < 0) ant.a = 0
-  if (ant.x > gardenW) ant.a = Math.PI
-  if (ant.y < 0) ant.a = Math.PI*1.5
-  if (ant.y > gardenH) ant.a = Math.PI*0.5
-  // Move!
-  ant.x += cos(ant.a)*8;
-  ant.y += sin(ant.a)*8;
+  if (ant.x < 0) ant.a = 0;
+  if (ant.x > gardenW) ant.a = Math.PI;
+  if (ant.y < 0) ant.a = Math.PI*0.5;
+  if (ant.y > gardenH) ant.a = Math.PI*1.5;
 }
 
 function walkWithoutPath(ant) {
@@ -390,13 +434,15 @@ function walkWithoutPath(ant) {
     if (tics%1200==0) log.debug('metabolism', user.name, metabolism, lifetime);
     if (tics%metabolism==0) { // consume calories
       user.queen.food--;
-      if (user.socket && user.queen.life < 100) user.socket.emit('news', 'Your queen is hungry!');
-      if ( user.queen.life < 1 ) gameOver(user, 'Queen dye hungry.')
+      if (user.socket && user.queen.food < 100) user.socket.emit('news', 'Your queen is hungry!');
+      if ( user.queen.food < 1 ) gameOver(user, 'Queen died hungry.')
     }
+    if (user.socket) user.socket.emit('queenFood', user.queen.food);
     // Ant born
-    if (tics%101==0) createAnt(name);
+    if (tics%((user.qtd<10)?21:41)==0) createAnt(name);
     // Pop out ants
-    if ( user.qtdG < user.qtdN/2 ) {
+    if ( (user.qtdG < user.qtdN/2 || user.currentCMD=='getFood' || user.currentCMD=='attack')
+         && user.currentCMD!='goHome' ) {
       var ant = user.newerN;
       ant.inside = false;
       ant.x = user.anthill.x;
@@ -406,9 +452,9 @@ function walkWithoutPath(ant) {
     if ( user.socket ) {
       user.socket.emit('food', user.food);
       user.socket.emit('lifetime', lifetime);
-      if ( lifetime > record.lifetime || name != record.user ) {
+      if ( lifetime > record.lifetime ) {
         record = {user:name, lifetime:lifetime};
-        if (tics%10==0) db('record', record);
+        if (tics%20==0) db('record', record);
         io.emit('record', record);
       }
     }
@@ -424,7 +470,37 @@ function walkWithoutPath(ant) {
   for ( var id in ants ) {
     var ant = ants[id];
     user = users[ant.owner];
-    if (!ant.inside) moveAnt(ant);
+    if (!ant.inside) {
+      if (user.currentCMD=='goHome') ant.act = ACTION_BACKHOME;
+      if (user.currentCMD=='getFood' && !ant.candy) ant.act = ACTION_FINDFOOD;
+      if (user.currentCMD=='attack') {
+        ant.act = ACTION_FIGHT;
+        ant.fightAngry = 10 + ant.type*5;
+        var candy = candies[ant.candy];
+        if (candy) { // drop candy
+          candy.x = ant.x;
+          candy.y = ant.y;
+          ant.candy = null;
+          candy.ant = null;
+        }
+      }
+      // Select direction to move
+      switch (user.currentCMD) {
+        case 'goN': ant.a = Math.PI*1.5; break;
+        case 'goS': ant.a = Math.PI*.5; break;
+        case 'goW': ant.a = Math.PI; break;
+        case 'goE': ant.a = 0; break;
+        default: setAntDirection(ant);
+      }
+      // Place pheromone
+      var pheromoneType = null;
+      if ( ant.act==ACTION_FINDFOOD || ant.act==ACTION_FIGHT ) pheromoneType = 'pathHome';
+      if ( ant.act==ACTION_BACKHOME && ant.candy ) pheromoneType = 'pathFood';
+      if(pheromoneType && tics%3==0 && !ant.inside) letPheromone(ant.owner, pheromoneType, ant);
+      // Move!
+      ant.x += cos(ant.a)*8;
+      ant.y += sin(ant.a)*8;
+    }
     // Feed
     if ( ant.inside && ant.food<500 && user.food>0 ) { // Must eat
       user.food--; ant.food++;
@@ -437,7 +513,7 @@ function walkWithoutPath(ant) {
   io.emit('ants', ants);
   io.emit('candies', candies);
   var pheromones={}; for (name in users) pheromones[name] = users[name].pheromone;
-  io.emit('pheromones', pheromones); // DEBUG ONLY
+  //io.emit('pheromones', pheromones); // DEBUG ONLY
   // Compute TPS (tics per second);
   lastTicTmp = now();
   tps = 1000/(lastTicTmp-lastTic);

@@ -74,6 +74,10 @@ h2 {
   letter-spacing: 1px;
 }
 
+#btns .on {
+  background: #C30;
+}
+
 #cmd hr {
   border: none;
   margin: 20px;

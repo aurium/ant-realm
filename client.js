@@ -15,10 +15,15 @@ var ctx = c.getContext('2d'),
     playerName = docCookies.getItem('ants-playerName') || '',
     sessionID = docCookies.getItem('ants-sessionID'),
     anthills = {},
-    antsTarget = {},
+    antTic = 0,
     ants = {},
+    antsTarget = {},
+    ACTION_FINDFOOD = 1,
+    ACTION_BACKHOME = 2,
+    ACTION_FIGHT = 3,
     lifetime = 0,
-    pheromones = {}, // DEBUG ONLY
+    pheromones = {},
+    pheromonesSrv = {}, // DEBUG ONLY
     candies = {},
     proportionWork = 90,
     proportionWarr = 10,
@@ -28,6 +33,7 @@ var ctx = c.getContext('2d'),
     now = Date.now,
     lastAntUpdate = now(),
     lastTic = now(),
+    ticDelay = 0,
     start = now();
 
 function timeToStr(time) {
@@ -204,13 +210,18 @@ function drawCandy(candy, antCatch) {
 }
 
 function drawAnt(ant) {
-  if (ant.inside) return; // if inside the neast (its anthill), does not draw it.
-  if ( (ant.x-viewX) < -5 || (ant.x-viewX) > w+5
-    || (ant.y-viewY) < -5 || (ant.y-viewY) > h+5 ) return;
+  var antFuture = antsTarget[ant.id];
+  if (!antFuture || antFuture.inside) return;
+  var pct = (now()-lastAntUpdate)/500;
+  if (pct>1) pct=1;
+  var x = ant.x*(1-pct) + antFuture.x*pct - viewX;
+  var y = ant.y*(1-pct) + antFuture.y*pct - viewY;
+  var a = ant.a*(1-pct) + antFuture.a*pct;
+  if ( x < -5 || x > w+5 || y < -5 || y > h+5 ) return;
   ctx.save();
-  ctx.translate(ant.x-viewX, ant.y-viewY);
-  ctx.rotate(ant.a);
-  var candy = candies[ant.candy];
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  var candy = candies[antFuture.candy];
   if (candy) {
     candy.x = 8;
     candy.y = 0;
@@ -240,15 +251,6 @@ function drawAnt(ant) {
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.closePath();
-  // Antennas
-  ctx.beginPath();
-  ctx.moveTo(7 + ant.type + step/2, -5);
-  ctx.lineTo(5 + ant.type, 0);
-  ctx.lineTo(7 + ant.type - step/2, +5);
-  ctx.setLineDash([]);
-  ctx.lineWidth = 0.5;
-  ctx.stroke();
-  ctx.closePath();
   // Jaw
   if (ant.type==1) {
     ctx.beginPath();
@@ -261,7 +263,42 @@ function drawAnt(ant) {
     ctx.stroke();
     ctx.closePath();
   }
+  // Angry
+  if (antFuture.act==ACTION_FIGHT) {
+    ctx.fillStyle = 'rgba(255,0,0,'+((3+step)/6)+')';
+    ctx.beginPath();
+    ctx.arc( 3.7+ant.type, 0, 2+ant.type, 0,7 );
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Antennas
+  ctx.beginPath();
+  ctx.moveTo(7 + ant.type + step/2, -5);
+  ctx.lineTo(5 + ant.type, 0);
+  ctx.lineTo(7 + ant.type - step/2, +5);
+  ctx.setLineDash([]);
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.closePath();
+  // Done
   ctx.restore();
+}
+
+function drawPheromones() {
+  for ( var id in pheromones ) {
+    var pheromone = pheromones[id];
+    var time = 1e5 + pheromone.t-lastAntUpdate;
+    var x=pheromone.x-viewX, y=pheromone.y-viewY;
+    if ( x > 0 && x < w && y >0 && y < h ) {
+      var color = (pheromone.a==ACTION_BACKHOME)? '255,220,100,' : '0,100,0,';
+      ctx.fillStyle = 'rgba('+color+(.2+time/1e5)+')';
+      ctx.beginPath();
+      ctx.arc( x, y, 1.5, 0,7 );
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (time<1) delete pheromones[id];
+  }
 }
 
 window.requestAnimationFrame =
@@ -274,9 +311,9 @@ window.requestAnimationFrame =
 lastTic = now();
 function tic() {
   var N = now();
-  var delay = N-lastTic;
+  ticDelay = N-lastTic;
   lastTic = N;
-  debug.innerHTML = Math.round(1000/delay) + 'fps';
+  debug.innerHTML = Math.round(1000/ticDelay) + 'fps';
   viewX += incViewX*incViewAcel;
   viewY += incViewY*incViewAcel;
   if ( incViewX==0 && incViewY==0 ) incViewAcel = 2;
@@ -287,32 +324,34 @@ function tic() {
   if (viewY+h > gardenH) viewY = gardenH-h;
   updateMiniMap();
   grass();
+  drawPheromones();
   for ( var owner in anthills ) drawAnthill(anthills[owner]);
   for ( var num in candies ) drawCandy(candies[num]);
-  if (pheromones[playerName]) { // DEBUG ONLY
-    for ( var pID in pheromones[playerName].pathHome ) { // DEBUG ONLY
-      var pheromone = pheromones[playerName].pathHome[pID];
-      ctx.strokeStyle = '#FFF';
-      ctx.beginPath();
-      ctx.arc( pheromone.x-viewX, pheromone.y-viewY, 4, 0,7 );
-      ctx.moveTo( pheromone.x-viewX, pheromone.y-viewY );
-      ctx.lineTo( pheromone.x-viewX+pheromone.vx*8, pheromone.y-viewY+pheromone.vy*8 );
-      ctx.lineWidth = .2 + pheromone.force/100;
-      ctx.stroke();
-      ctx.closePath();
-    }
-    for ( var pID in pheromones[playerName].pathFood ) { // DEBUG ONLY
-      var pheromone = pheromones[playerName].pathFood[pID];
-      ctx.strokeStyle = '#FE0';
-      ctx.beginPath();
-      ctx.arc( pheromone.x-viewX, pheromone.y-viewY, 4, 0,7 );
-      ctx.moveTo( pheromone.x-viewX, pheromone.y-viewY );
-      ctx.lineTo( pheromone.x-viewX+pheromone.vx*8, pheromone.y-viewY+pheromone.vy*8 );
-      ctx.lineWidth = .2 + pheromone.force/100;
-      ctx.stroke();
-      ctx.closePath();
-    }
-  }
+//  var pheromSrv = pheromonesSrv[playerName]; // DEBUG ONLY
+//  if (pheromSrv) { // DEBUG ONLY
+//    for ( var pID in pheromSrv.pathHome ) { // DEBUG ONLY
+//      var pheromone = pheromSrv.pathHome[pID];
+//      ctx.strokeStyle = '#FFF';
+//      ctx.beginPath();
+//      ctx.arc( pheromone.x-viewX, pheromone.y-viewY, 4, 0,7 );
+//      ctx.moveTo( pheromone.x-viewX, pheromone.y-viewY );
+//      ctx.lineTo( pheromone.x-viewX+pheromone.vx*8, pheromone.y-viewY+pheromone.vy*8 );
+//      ctx.lineWidth = .2 + pheromone.force/100;
+//      ctx.stroke();
+//      ctx.closePath();
+//    }
+//    for ( var pID in pheromSrv.pathFood ) { // DEBUG ONLY
+//      var pheromone = pheromSrv.pathFood[pID];
+//      ctx.strokeStyle = '#FE0';
+//      ctx.beginPath();
+//      ctx.arc( pheromone.x-viewX, pheromone.y-viewY, 4, 0,7 );
+//      ctx.moveTo( pheromone.x-viewX, pheromone.y-viewY );
+//      ctx.lineTo( pheromone.x-viewX+pheromone.vx*8, pheromone.y-viewY+pheromone.vy*8 );
+//      ctx.lineWidth = .2 + pheromone.force/100;
+//      ctx.stroke();
+//      ctx.closePath();
+//    }
+//  }
   for ( var id in ants ) drawAnt(ants[id]);
   updateAntCounter();
   window.requestAnimationFrame(tic);
@@ -437,9 +476,10 @@ var socket = io(document.location.href);
 socket.on('news', onNews);
 socket.on('requestName', openNameDialog);
 socket.on('disconnect', onDisconnect);
-socket.on('pheromones', function(data){ pheromones = data }); // DEBUG ONLY
+socket.on('pheromones', function(data){ pheromonesSrv = data }); // DEBUG ONLY
 socket.on('candies', function(data){ candies = data });
 socket.on('food', function(data){ qtdFood.innerHTML = data });
+socket.on('queenFood', function(data){ queenFood.innerHTML = data });
 socket.on('lifetime', function(data){ lifetimeEl.innerHTML = timeToStr(lifetime=data) });
 socket.on('record', function(data){
   record.innerHTML = 'Record: '+data.user +' - lifetime: '+timeToStr(data.lifetime);
@@ -449,6 +489,12 @@ socket.on('ants', function(data){
 //  ants = data;
 //  for (var id in ants) if (old[id]) ants[id].a = (ants[id].a + old[id].a*3) / 4;
   lastAntUpdate = now();
+  if (++antTic%3==0)
+    for (var id in ants) {
+      var ant = ants[id];
+      if (!ant.inside && ( ant.act!=ACTION_BACKHOME || ant.candy ) )
+        pheromones[rnd()] = { x:ant.x, y:ant.y, t:lastAntUpdate, a:ant.act };
+    }
   ants = antsTarget;
   antsTarget = data;
 });
@@ -463,7 +509,10 @@ socket.on('anthillDone', function(data){
   openDialog(
     'Wellcome '+playerName,
     'At the left you can see the commands that you, the Ant Queen, can send.' +
-    ' This commands are pheromones and will last 10 seconds. <hr>' +
+    ' This commands are pheromones and will last some seconds. <hr>' +
+    'You have two kinds of ants: workers and warriors, you will recognize by size.' +
+    ' Warriors will not get food for you, but it fight better.' +
+    ' Your ants are allways black. <hr>' +
     'You can close this page and back to command your ants again,' +
     ' <b>if</b> the anthill still alive.'
   );
@@ -475,6 +524,19 @@ socket.on('gameOver', function(data){
     'Your anthill survive for '+ timeToStr(lifetime)
   );
 });
+
+function btCmdPressed(bt, secs) {
+  bt.className = 'on';
+  setTimeout(function(){ bt.className='' },(secs||8)*1000);
+}
+
+btHome.onclick = function() { btCmdPressed(this); socket.emit('cmd', 'goHome') }
+btFood.onclick = function() { btCmdPressed(this); socket.emit('cmd', 'getFood') }
+btAttack.onclick = function() { btCmdPressed(this); socket.emit('cmd', 'attack') }
+btN.onclick = function() { btCmdPressed(this,3); socket.emit('cmd', 'goN') }
+btS.onclick = function() { btCmdPressed(this,3); socket.emit('cmd', 'goS') }
+btW.onclick = function() { btCmdPressed(this,3); socket.emit('cmd', 'goW') }
+btE.onclick = function() { btCmdPressed(this,3); socket.emit('cmd', 'goE') }
 
 console.log('connected.');
 
