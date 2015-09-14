@@ -531,5 +531,5 @@ function gameOver(user, msg) {
   io.emit('news', 'The '+user.name+"'s anthill dies.");
   if ( user.sessionID == 1 )
     userRequestPlace({name:user.name, x:200+rnd(gardenW-400), y:200+rnd(gardenH-400)}, 1);
-  emitAnthills();
+  emitAnthills(io);
 }
